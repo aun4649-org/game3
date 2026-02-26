@@ -1,5 +1,70 @@
-# macOS metadata
+### MacOS ###
 .DS_Store
 .AppleDouble
 .LSOverride
+# アイコンやメタデータなど
+Icon?
 ._*
+.Spotlight-V100
+.Trashes
+
+### Windows ###
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+# フォルダ設定ファイル
+Desktop.ini
+# ごみ箱関連
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+
+### Common Editors (VS Code / JetBrains) ###
+.vscode/
+.idea/
+*.swp
+*~
+
+
+### AI/ML Specific ###
+# モデルの重みファイル（非常に巨大なためリポジトリには含めない）
+*.bin
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.gguf
+
+# データセットとキャッシュ
+data/
+datasets/
+.cache/
+__pycache__/
+
+### Security & Environment ###
+# APIキーや環境変数（絶対に公開してはいけない）
+.env
+.env.local
+.env.*.local
+secrets.json
+
+### Python (AI開発で一般的な場合) ###
+.venv/
+venv/
+env/
+bin/
+lib/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.installed.cfg
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
