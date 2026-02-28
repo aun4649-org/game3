@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GAME III SYSTEM</title>
+    <title>COSMOS II — Interactive Interpreter</title>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -15,8 +15,9 @@
         <pre id="screen"></pre>
     </div>
 
-    <!-- Scripts -->
-    <script src="js/interpreter.js"></script>
+    <!-- Scripts: runtime → editor → terminal (dependency order) -->
+    <script src="js/runtime.js"></script>
+    <script src="js/editor.js"></script>
     <script src="js/terminal.js"></script>
 </body>
 

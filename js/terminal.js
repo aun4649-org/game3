@@ -1,5 +1,12 @@
-const COLS = 80; // Standard retro width
-const ROWS = 25; // Standard retro height
+// ============================================================
+// terminal.js — COSMOS II Terminal UI
+// ============================================================
+// Full-screen retro terminal with CRT effect.
+// Provides I/O primitives used by both editor and runtime.
+// ============================================================
+
+const COLS = 80;
+const ROWS = 25;
 let screenBuffer = [];
 let cursorX = 0;
 let cursorY = 0;
@@ -7,16 +14,40 @@ let cursorY = 0;
 let pagerLines = [];
 let pagerActive = false;
 
+// ---------- Runtime I/O State ----------
+let runtimeRunning = false;
+let inputResolve = null;       // resolve function for pending input
+let inputMode = null;          // 'char' | 'number'
+let inputBuffer = "";          // accumulator for number input
+
+// ---------- ASCII Art ----------
+const STARTUP_ART = [
+    "",
+    "  _____  ____   _____  __  __  ____   _____    ___  ___",
+    " / ___/ / __ \\ / ___/ /  |/  |/ __ \\ / ___/   |_  ||  _|",
+    "| |    | |  | |\\___ \\/ /|_/ /| |  | |\\___ \\     | || |",
+    "| |___ | |__| |___/ / /  / / | |__| |___/ /    _| || |_",
+    " \\____/ \\____//____/_/  /_/   \\____//____/    |_ _||___|",
+    "",
+    ""
+];
+
+// ---------- Init ----------
 function initTerminal() {
     clearScreen();
     document.addEventListener('keydown', handleKeydown);
 
-    println("GAME III SYSTEM v0.1");
+    // Show startup ASCII art
+    for (const line of STARTUP_ART) {
+        println(line);
+    }
+    println("COSMOS II SYSTEM v1.0");
     println("READY.");
     printPrompt();
     renderScreen();
 }
 
+// ---------- Screen Management ----------
 function clearScreen() {
     screenBuffer = [];
     for (let i = 0; i < ROWS; i++) {
@@ -27,7 +58,6 @@ function clearScreen() {
 }
 
 function printPrompt() {
-    // End line and add prompt if we aren't already at start
     if (cursorX > 0) {
         cursorX = 0;
         cursorY++;
@@ -64,12 +94,10 @@ function renderScreen() {
         let line = '';
         for (let c = 0; c < COLS; c++) {
             let ch = screenBuffer[r][c];
-            // Escape HTML control characters
             if (ch === '<') ch = '&lt;';
             else if (ch === '>') ch = '&gt;';
             else if (ch === '&') ch = '&amp;';
 
-            // Render cursor
             if (r === cursorY && c === cursorX) {
                 line += `<span class="cursor">${ch}</span>`;
             } else {
@@ -87,9 +115,12 @@ function printStr(text) {
     }
 }
 
-// Print string and move to next line
 function println(text) {
     printStr(text);
+    newline();
+}
+
+function newline() {
     cursorX = 0;
     cursorY++;
     if (cursorY >= ROWS) {
@@ -98,7 +129,6 @@ function println(text) {
     }
 }
 
-// Put a single character into screen buffer at cursor
 function putchar(ch) {
     if (cursorY >= ROWS) {
         scrollUp();
@@ -116,21 +146,115 @@ function putchar(ch) {
     cursorX++;
 }
 
-// Shift screen upward to make space at the bottom
 function scrollUp() {
     screenBuffer.shift();
     screenBuffer.push(new Array(COLS).fill(' '));
 }
 
-// Read current line up to last non-space char
 function getLine(y) {
     return screenBuffer[y].join('').trimEnd();
 }
 
-// Fullscreen Editor Key Handling
+// ---------- Runtime I/O API ----------
+// These are called by the runtime engine during program execution.
+
+// Output a string (no newline)
+function runtimePrint(text) {
+    printStr(text);
+    renderScreen();
+}
+
+// Output a string with newline
+function runtimePrintln(text) {
+    println(text);
+    renderScreen();
+}
+
+// Request a single character input from user — returns a Promise
+function runtimeInputChar() {
+    return new Promise((resolve) => {
+        inputMode = 'char';
+        inputResolve = resolve;
+        renderScreen();
+    });
+}
+
+// Request a number input from user — returns a Promise
+function runtimeInputNumber() {
+    return new Promise((resolve) => {
+        inputMode = 'number';
+        inputBuffer = "";
+        printStr("? ");
+        inputResolve = resolve;
+        renderScreen();
+    });
+}
+
+// Finish runtime mode
+function runtimeFinish() {
+    runtimeRunning = false;
+    inputResolve = null;
+    inputMode = null;
+    inputBuffer = "";
+}
+
+// ---------- Key Handler ----------
 function handleKeydown(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+    // --- Runtime input mode ---
+    if (runtimeRunning && inputResolve) {
+        e.preventDefault();
+
+        if (inputMode === 'char') {
+            if (e.key.length === 1) {
+                const code = e.key.charCodeAt(0);
+                putchar(e.key);
+                renderScreen();
+                const resolve = inputResolve;
+                inputResolve = null;
+                inputMode = null;
+                resolve(code);
+            }
+            return;
+        }
+
+        if (inputMode === 'number') {
+            if (e.key === "Enter") {
+                newline();
+                const val = parseInt(inputBuffer, 10);
+                if (isNaN(val) || val < -2147483648 || val > 2147483647) {
+                    // Invalid — re-prompt
+                    inputBuffer = "";
+                    printStr("? ");
+                    renderScreen();
+                    return;
+                }
+                const resolve = inputResolve;
+                inputResolve = null;
+                inputMode = null;
+                resolve(val);
+            } else if (e.key === "Backspace") {
+                if (inputBuffer.length > 0) {
+                    inputBuffer = inputBuffer.slice(0, -1);
+                    if (cursorX > 0) {
+                        cursorX--;
+                        screenBuffer[cursorY][cursorX] = ' ';
+                    }
+                }
+            } else if (e.key.length === 1 && /[0-9\-]/.test(e.key)) {
+                inputBuffer += e.key;
+                putchar(e.key);
+            }
+            renderScreen();
+            return;
+        }
+
+        // Runtime running but no input pending — ignore keys
+        return;
+    }
+
+    // --- Normal editor mode ---
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Backspace", "Delete", "Enter"].includes(e.key)) {
         e.preventDefault();
     }
@@ -162,7 +286,6 @@ function handleKeydown(e) {
     } else if (e.key === "Backspace") {
         if (cursorX > minXCurrent) {
             cursorX--;
-            // Shift characters left
             for (let i = cursorX; i < COLS - 1; i++) {
                 screenBuffer[cursorY][i] = screenBuffer[cursorY][i + 1];
             }
@@ -170,7 +293,6 @@ function handleKeydown(e) {
         }
     } else if (e.key === "Delete") {
         if (cursorX >= minXCurrent) {
-            // Shift characters left without moving cursor
             for (let i = cursorX; i < COLS - 1; i++) {
                 screenBuffer[cursorY][i] = screenBuffer[cursorY][i + 1];
             }
@@ -191,6 +313,27 @@ function handleKeydown(e) {
 
         if (typeof processCommand === "function") {
             let out = processCommand(lineText);
+
+            // Handle async (RUN returns a Promise)
+            if (out instanceof Promise) {
+                runtimeRunning = true;
+                out.then((result) => {
+                    runtimeFinish();
+                    if (result !== undefined && result !== "") {
+                        println(String(result));
+                    }
+                    printPrompt();
+                    renderScreen();
+                }).catch((err) => {
+                    runtimeFinish();
+                    println(String(err));
+                    printPrompt();
+                    renderScreen();
+                });
+                renderScreen();
+                return;
+            }
+
             if (Array.isArray(out)) {
                 pagerLines = out;
                 if (pagerLines.length > 0) {
@@ -211,15 +354,13 @@ function handleKeydown(e) {
     } else if (e.key.length === 1) {
         if (cursorX < minXCurrent) cursorX = minXCurrent;
 
-        // Alphanumeric and symbol input
-        // Check if we are inserting (shift chars right) or overtyping
-        // Classic BASICs usually overtype, but user asked for "insert"
-        // so we'll push everything right.
+        // Insert mode — shift characters right
         for (let i = COLS - 1; i > cursorX; i--) {
             screenBuffer[cursorY][i] = screenBuffer[cursorY][i - 1];
         }
 
-        screenBuffer[cursorY][cursorX] = e.key.toUpperCase();
+        // Store the character AS-IS (lowercase support!)
+        screenBuffer[cursorY][cursorX] = e.key;
         cursorX++;
         if (cursorX >= COLS) {
             cursorX = 0;
@@ -233,9 +374,8 @@ function handleKeydown(e) {
         }
     }
 
-    // Refresh DOM once per key pressed
     renderScreen();
 }
 
-// Kickoff
+// ---------- Kickoff ----------
 window.addEventListener('load', initTerminal);
