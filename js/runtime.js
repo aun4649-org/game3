@@ -340,6 +340,7 @@ class CosmosRuntime {
         this.sortedLines = [];
         this.running = false;
         this.MAX_STACK = 256;
+        this.currentStmtPos = 0;
 
         // Parsed statements cache: lineNo -> array of statement token arrays
         this.statementsCache = {};
@@ -437,16 +438,28 @@ class CosmosRuntime {
         return {
             type: 'RUNTIME',
             message: `** RUNTIME ERROR : ${msg}`,
-            line: this.pc
+            line: this.pc,
+            pos: this.currentStmtPos
+        };
+    }
+
+    interruptError() {
+        return {
+            type: 'INTERRUPT',
+            message: `** Program interrupted`,
+            line: this.pc,
+            pos: this.currentStmtPos
         };
     }
 
     formatError(err, lineContent) {
-        const lines = [err.message];
+        const lines = ['', '']; // 2 blank lines before error
+        lines.push(err.message);
         if (lineContent !== undefined) {
             lines.push(lineContent);
-            if (err.pos !== undefined) {
-                lines.push(' '.repeat(err.pos) + '^');
+            if (err.pos !== undefined && err.pos >= 0) {
+                const prefixLen = String(this.pc).length + 1;
+                lines.push(' '.repeat(prefixLen + err.pos) + '^');
             }
         }
         return lines;
@@ -755,7 +768,7 @@ class CosmosRuntime {
         if (t.type === TokenType.QUESTION) {
             this.evalAdvance();
             const val = await runtimeInputNumber();
-            if (val && val.interrupted) throw this.runtimeError("Program interrupted");
+            if (val && val.interrupted) throw this.interruptError();
             return toInt32(val);
         }
 
@@ -763,7 +776,7 @@ class CosmosRuntime {
         if (t.type === TokenType.DOLLAR) {
             this.evalAdvance();
             const val = await runtimeInputChar();
-            if (val && val.interrupted) throw this.runtimeError("Program interrupted");
+            if (val && val.interrupted) throw this.interruptError();
             return toInt32(val);
         }
 
@@ -1158,6 +1171,7 @@ class CosmosRuntime {
         try {
             while (this.running) {
                 const lineNo = this.pc;
+                this.currentStmtPos = 0; // reset at start of each line
 
                 // Check if we've run past the end
                 if (this.sortedLines.indexOf(lineNo) === -1 &&
@@ -1167,7 +1181,7 @@ class CosmosRuntime {
 
                 // Check for interrupt
                 if (window.cosmosInterruptFlag) {
-                    throw this.runtimeError("Program interrupted");
+                    throw this.interruptError();
                 }
 
                 const source = this.programMemory[lineNo];
@@ -1235,12 +1249,16 @@ class CosmosRuntime {
                     // Record current position for NEXT tracking
                     this.stmtIndex = currentStmt + 1; // next statement index
 
+                    // Capture position of first token of this statement for error reporting
+                    const peekTok = this.evalPeek();
+                    this.currentStmtPos = peekTok.pos >= 0 ? peekTok.pos : 0;
+
                     const result = await this.executeStatement();
 
                     // Check interrupt after each statement so CTRL+C pressed
                     // during async evaluation (e.g. input) is caught immediately.
                     if (window.cosmosInterruptFlag) {
-                        throw this.runtimeError("Program interrupted");
+                        throw this.interruptError();
                     }
 
                     switch (result) {
@@ -1283,15 +1301,7 @@ class CosmosRuntime {
                 }
             }
         } catch (err) {
-            if (err && err.type === 'RUNTIME') {
-                const source = this.programMemory[this.pc] || "";
-                const lines = this.formatError(err, this.pc + " " + source);
-                for (const line of lines) {
-                    runtimePrintln(line);
-                }
-                return "";
-            }
-            if (err && err.type === 'SYNTAX') {
+            if (err && (err.type === 'RUNTIME' || err.type === 'INTERRUPT' || err.type === 'SYNTAX')) {
                 const source = this.programMemory[this.pc] || "";
                 const lines = this.formatError(err, this.pc + " " + source);
                 for (const line of lines) {

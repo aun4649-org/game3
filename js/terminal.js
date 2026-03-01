@@ -44,6 +44,7 @@ function initTerminal() {
     }
     println("COSMOS II SYSTEM v1.0");
     println("Original designed by Denken Club and H.Ohnishi.",);
+    println("");
     println("READY.");
     printPrompt();
     renderScreen();
