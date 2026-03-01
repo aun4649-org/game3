@@ -160,15 +160,17 @@ function getLine(y) {
 // These are called by the runtime engine during program execution.
 
 // Output a string (no newline)
+// NOTE: renderScreen() is NOT called here to avoid flooding the browser with
+// rapid DOM updates in tight loops. The run loop calls renderScreen() once per
+// line at its yield point (setTimeout). For input prompts, runtimeInputChar /
+// runtimeInputNumber still call renderScreen() directly.
 function runtimePrint(text) {
     printStr(text);
-    renderScreen();
 }
 
 // Output a string with newline
 function runtimePrintln(text) {
     println(text);
-    renderScreen();
 }
 
 // Request a single character input from user — returns a Promise
@@ -204,13 +206,17 @@ function handleKeydown(e) {
     if (e.ctrlKey && e.key.toLowerCase() === 'c') {
         window.cosmosInterruptFlag = true;
 
-        // If we are waiting for input, reject immediately
-        if (runtimeRunning && inputResolve) {
+        if (runtimeRunning) {
+            // Always prevent default during runtime so the browser doesn't
+            // intercept the key (e.g. clipboard copy) while execution is active.
             e.preventDefault();
-            const resolve = inputResolve;
-            inputResolve = null;
-            inputMode = null;
-            resolve({ interrupted: true }); // Special object to indicate interrupt
+            if (inputResolve) {
+                // Immediately unblock any pending input wait.
+                const resolve = inputResolve;
+                inputResolve = null;
+                inputMode = null;
+                resolve({ interrupted: true });
+            }
             return;
         }
     }

@@ -1183,9 +1183,15 @@ class CosmosRuntime {
                 // We need to track how many statements we've skipped
                 this.initEval(allTokens, 0);
 
-                // Yield to event loop occasionally to prevent browser freeze
-                // Wait 1ms every 100 statements or at the end of each line
+                // Yield to event loop once per line so the browser can process
+                // key events (including CTRL+C) and repaint the screen.
                 await new Promise(r => setTimeout(r, 0));
+
+                // Render accumulated output since last yield. Calling renderScreen()
+                // here (rather than inside runtimePrint/runtimePrintln) limits DOM
+                // updates to at most once per line, preventing browser main-thread
+                // saturation in tight output loops.
+                if (typeof renderScreen === "function") renderScreen();
 
                 // Skip to the right statement
                 // For simplicity, we track statement boundaries:
@@ -1230,6 +1236,12 @@ class CosmosRuntime {
                     this.stmtIndex = currentStmt + 1; // next statement index
 
                     const result = await this.executeStatement();
+
+                    // Check interrupt after each statement so CTRL+C pressed
+                    // during async evaluation (e.g. input) is caught immediately.
+                    if (window.cosmosInterruptFlag) {
+                        throw this.runtimeError("Program interrupted");
+                    }
 
                     switch (result) {
                         case 'NEXT':
