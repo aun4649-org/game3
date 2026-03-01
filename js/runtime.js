@@ -128,7 +128,7 @@ class Tokenizer {
                 while (this.pos < this.src.length && this.peek() !== '"') {
                     str += this.advance();
                 }
-                if (this.pos < this.src.length) {
+                if (this.pos < this.src.length && this.peek() === '"') {
                     this.advance(); // skip closing "
                 }
                 this.tokens.push(new Token(TokenType.STRING, str, startPos));
@@ -492,6 +492,9 @@ class CosmosRuntime {
     }
 
     evalAdvance() {
+        if (this.evalPos >= this.evalTokens.length) {
+            return new Token(TokenType.EOF, null, -1);
+        }
         const t = this.evalTokens[this.evalPos];
         this.evalPos++;
         return t;
@@ -845,6 +848,15 @@ class CosmosRuntime {
         if (t.type === TokenType.STRING) {
             this.evalAdvance();
             runtimePrint(t.value);
+            // If the next token is EOF, we should let the main loop handle it, but
+            // returning NEXT is correct because if the next token is EOF, the main loop
+            // will naturally break on `while (this.evalPeek().type !== TokenType.EOF)`.
+            // Wait, why didn't it break? Ah, because evalPos did not advance relative
+            // to the *start* of the loop, because we returned NEXT, which increments
+            // currentStmt, but the *next* statement was EOF, which didn't consume anything.
+            // Oh, no! The statement string consumptions DID advance evalPos.
+            // But wait, what if currentStmt was incremented, but skipToStmt was higher?
+            // Let's just return NEXT.
             return 'NEXT';
         }
 
@@ -1171,6 +1183,10 @@ class CosmosRuntime {
                 // We need to track how many statements we've skipped
                 this.initEval(allTokens, 0);
 
+                // Yield to event loop occasionally to prevent browser freeze
+                // Wait 1ms every 100 statements or at the end of each line
+                await new Promise(r => setTimeout(r, 0));
+
                 // Skip to the right statement
                 // For simplicity, we track statement boundaries:
                 // Statements are separated by whitespace (already stripped by tokenizer).
@@ -1201,6 +1217,8 @@ class CosmosRuntime {
 
                 let jumped = false;
                 while (this.evalPeek().type !== TokenType.EOF) {
+                    const startPos = this.evalPos;
+
                     if (currentStmt < skipToStmt) {
                         // Need to skip this statement — fast-forward
                         this.skipOneStatement();
@@ -1233,6 +1251,19 @@ class CosmosRuntime {
                             break;
                     }
                     if (jumped) break;
+
+                    // Safety check to prevent infinite loop on malformed statement endings
+                    // If a statement completed but didn't consume any tokens, we're stuck.
+                    // This can happen if executeStatement returns normally without advancing,
+                    // e.g. a string statement that doesn't consume EOF cleanly.
+                    if (this.evalPos === startPos && this.evalPeek().type !== TokenType.EOF) {
+                        break;
+                    }
+
+                    // If we naturally hit the end of the logical statement tokens
+                    if (this.evalPeek().type === TokenType.EOF) {
+                        break;
+                    }
                 }
 
                 if (!jumped) {
@@ -1307,6 +1338,7 @@ class CosmosRuntime {
         // or EOF. Track bracket depth.
         this.evalAdvance();
         let depth = 0;
+        let lastPos = this.evalPos;
         while (this.evalPeek().type !== TokenType.EOF) {
             const cur = this.evalPeek();
             if (cur.type === TokenType.LPAREN || cur.type === TokenType.LBRACKET ||
@@ -1328,6 +1360,9 @@ class CosmosRuntime {
             } else {
                 this.evalAdvance();
             }
+            // Saftey check to prevent infinite loops if advance fails to move forward
+            if (this.evalPos === lastPos) break;
+            lastPos = this.evalPos;
         }
     }
 

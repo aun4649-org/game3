@@ -23,12 +23,14 @@ $RECYCLE.BIN/
 *.msm
 *.msp
 
+### Claude Code
+.claude/
+
 ### Common Editors (VS Code / JetBrains) ###
 .vscode/
 .idea/
 *.swp
 *~
-
 
 ### AI/ML Specific ###
 # モデルの重みファイル（非常に巨大なためリポジトリには含めない）
