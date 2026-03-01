@@ -104,6 +104,17 @@ class Tokenizer {
             const startPos = this.pos;
             const ch = this.peek();
 
+            // Check for inline comments: //, ##, --
+            if (this.pos + 1 < this.src.length) {
+                const nextCh = this.src[this.pos + 1];
+                if ((ch === '/' && nextCh === '/') ||
+                    (ch === '#' && nextCh === '#') ||
+                    (ch === '-' && nextCh === '-')) {
+                    // It's a comment, ignore the rest of the line
+                    break;
+                }
+            }
+
             // Skip spaces
             if (ch === ' ') {
                 this.advance();
@@ -741,6 +752,7 @@ class CosmosRuntime {
         if (t.type === TokenType.QUESTION) {
             this.evalAdvance();
             const val = await runtimeInputNumber();
+            if (val && val.interrupted) throw this.runtimeError("Program interrupted");
             return toInt32(val);
         }
 
@@ -748,6 +760,7 @@ class CosmosRuntime {
         if (t.type === TokenType.DOLLAR) {
             this.evalAdvance();
             const val = await runtimeInputChar();
+            if (val && val.interrupted) throw this.runtimeError("Program interrupted");
             return toInt32(val);
         }
 
@@ -1136,6 +1149,11 @@ class CosmosRuntime {
                     break; // natural end
                 }
 
+                // Check for interrupt
+                if (window.cosmosInterruptFlag) {
+                    throw this.runtimeError("Program interrupted");
+                }
+
                 const source = this.programMemory[lineNo];
                 if (source === undefined) {
                     break;
@@ -1345,7 +1363,144 @@ class CosmosRuntime {
 // ======================== ENTRY POINT ========================
 
 async function cosmosRun(programMemory, memory) {
+    if (typeof window !== "undefined") window.cosmosInterruptFlag = false;
     const runtime = new CosmosRuntime(programMemory, memory);
     const result = await runtime.run();
     return result;
+}
+
+// ----- Direct Execution -----
+async function cosmosExecuteDirect(lineStr, programMemory, memory) {
+    if (typeof window !== "undefined") window.cosmosInterruptFlag = false;
+
+    // Create a temporary runtime with an isolated program memory that just holds this one line
+    const tempProgramMemory = { 0: lineStr };
+    const runtime = new CosmosRuntime(tempProgramMemory, memory);
+
+    // We execute it by setting the PC to 0 and running the loop.
+    // However, if the line contains a GOTO (#=...) or GOSUB (!=...), the run loop will naturally 
+    // try to jump to those lines. Let's execute run() but swap the programMemory to the real one 
+    // IF a jump occurs.
+
+    // To handle "#=10" (GOTO 10) entered in direct mode:
+    // It will parse "#=10", change pc to 10, and then try to continue. 
+    // If we just use run(), it will fail because line 10 isn't in tempProgramMemory.
+
+    // Override advanceToNextLine to switch to real execution if a jump happened
+    let originalAdvance = runtime.advanceToNextLine.bind(runtime);
+    let jumpDetected = false;
+
+    runtime.advanceToNextLine = function () {
+        if (this.pc !== 0) {
+            // A jump occurred! Switch to full execution
+            jumpDetected = true;
+            this.running = false; // Stop temp execution
+        } else {
+            // Natural end of the direct line
+            this.running = false;
+        }
+    };
+
+    const result = await runtime.run();
+
+    if (jumpDetected) {
+        // Kick off the real program using the modified PC
+        // Ensure state like variables in 'memory' is preserved.
+        const realRuntime = new CosmosRuntime(programMemory, memory);
+        realRuntime.sortedLines = Object.keys(programMemory).map(Number).sort((a, b) => a - b);
+        realRuntime.pc = runtime.pc;
+
+        if (realRuntime.sortedLines.indexOf(realRuntime.pc) === -1 && realRuntime.pc !== -1) {
+            // Re-validate the jump target in the real program memory
+            const target = realRuntime.findLine(realRuntime.pc);
+            if (target === null) {
+                runtimePrintln("** RUNTIME ERROR : Mismatched control blocks");
+                return "";
+            }
+            realRuntime.pc = target;
+        }
+
+        realRuntime.stmtIndex = 0;
+        realRuntime.running = true;
+
+        // Start from midway
+        // (Note: To properly launch mid-way, we bypass realRuntime.run() initialization 
+        // which clears variables and resets PC. We duplicate the core loop here, or modify run() 
+        // to accept a starting PC. For simplicity, let's just use a modified run method.)
+
+        await runFromState(realRuntime);
+        return "";
+    }
+
+    return result;
+}
+
+async function runFromState(runtime) {
+    try {
+        while (runtime.running) {
+            const lineNo = runtime.pc;
+
+            if (runtime.sortedLines.indexOf(lineNo) === -1 &&
+                lineNo > runtime.sortedLines[runtime.sortedLines.length - 1]) {
+                break;
+            }
+
+            if (window.cosmosInterruptFlag) {
+                throw runtime.runtimeError("Program interrupted");
+            }
+
+            const source = runtime.programMemory[lineNo];
+            if (source === undefined) {
+                break;
+            }
+
+            const tokenizer = new Tokenizer(source);
+            const allTokens = tokenizer.tokenize();
+
+            let currentStmt = 0;
+            let skipToStmt = runtime.stmtIndex;
+
+            runtime.initEval(allTokens, 0);
+
+            const firstToken = runtime.evalPeek();
+            if (firstToken.type === TokenType.EOF || runtime.isComment(firstToken)) {
+                runtime.advanceToNextLine();
+                continue;
+            }
+
+            let jumped = false;
+            while (runtime.evalPeek().type !== TokenType.EOF) {
+                if (currentStmt < skipToStmt) {
+                    runtime.skipOneStatement();
+                    currentStmt++;
+                    continue;
+                }
+
+                runtime.stmtIndex = currentStmt + 1;
+                const result = await runtime.executeStatement();
+
+                switch (result) {
+                    case 'NEXT': currentStmt++; break;
+                    case 'SKIP_LINE':
+                    case 'JUMPED':
+                    case 'RETURNED': jumped = true; break;
+                    case 'END': runtime.running = false; jumped = true; break;
+                }
+                if (jumped) break;
+            }
+
+            if (!jumped) {
+                runtime.advanceToNextLine();
+            }
+        }
+    } catch (err) {
+        if (err && (err.type === 'RUNTIME' || err.type === 'SYNTAX')) {
+            const source = runtime.programMemory[runtime.pc] || "";
+            const lines = runtime.formatError(err, runtime.pc + " " + source);
+            for (const line of lines) runtimePrintln(line);
+            return "";
+        }
+        throw err;
+    }
+    return "";
 }

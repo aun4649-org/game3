@@ -154,14 +154,6 @@ function processCommand(line) {
             clearVariables();
             return "OK";
 
-        case "RUN": {
-            // Delegate to runtime engine
-            if (typeof cosmosRun === "function") {
-                return cosmosRun(programMemory, memory);
-            }
-            return "RUNTIME NOT LOADED";
-        }
-
         case "CLEAR":
         case "CLS":
             clearScreen();
@@ -197,7 +189,7 @@ function processCommand(line) {
                 "  LIST [s]-[e]   : SHOW PROGRAM LINES",
                 "  DELETE [s]-[e] : DELETE PROGRAM LINES",
                 "  NEW            : CLEAR PROGRAM & VARS",
-                "  RUN            : EXECUTE PROGRAM",
+                "  #=<line>       : EXECUTE PROGRAM FROM LINE",
                 "  COLOR W|G|A    : TEXT COLOR (WHITE/GREEN/AMBER)",
                 "  FONT <size>    : CHANGE FONT SIZE",
                 "  CLEAR / CLS    : CLEAR SCREEN",
@@ -205,6 +197,10 @@ function processCommand(line) {
             ];
 
         default:
+            // Direct expression evaluation or statement execution
+            if (typeof cosmosExecuteDirect === "function") {
+                return cosmosExecuteDirect(line, programMemory, memory);
+            }
             return "SYNTAX ERROR";
     }
 }

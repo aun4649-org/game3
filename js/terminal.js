@@ -16,6 +16,7 @@ let pagerActive = false;
 
 // ---------- Runtime I/O State ----------
 let runtimeRunning = false;
+window.cosmosInterruptFlag = false; // Added for CTRL+C interrupt tracking
 let inputResolve = null;       // resolve function for pending input
 let inputMode = null;          // 'char' | 'number'
 let inputBuffer = "";          // accumulator for number input
@@ -200,6 +201,20 @@ function runtimeFinish() {
 
 // ---------- Key Handler ----------
 function handleKeydown(e) {
+    if (e.ctrlKey && e.key.toLowerCase() === 'c') {
+        window.cosmosInterruptFlag = true;
+
+        // If we are waiting for input, reject immediately
+        if (runtimeRunning && inputResolve) {
+            e.preventDefault();
+            const resolve = inputResolve;
+            inputResolve = null;
+            inputMode = null;
+            resolve({ interrupted: true }); // Special object to indicate interrupt
+            return;
+        }
+    }
+
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
     // --- Runtime input mode ---
