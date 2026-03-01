@@ -30,8 +30,6 @@ const STARTUP_ART = [
     "| |___ | |__| |___/ / /  / / | |__| |___/ /    _| || |_",
     " \\____/ \\____//____/_/  /_/   \\____//____/    |_ _||___|",
     "",
-    "Original designed by Denlen Club and H.Ohnishi.",
-    "",
     ""
 ];
 
@@ -45,6 +43,7 @@ function initTerminal() {
         println(line);
     }
     println("COSMOS II SYSTEM v1.0");
+    println("Original designed by Denken Club and H.Ohnishi.",);
     println("READY.");
     printPrompt();
     renderScreen();
