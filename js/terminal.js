@@ -30,6 +30,8 @@ const STARTUP_ART = [
     "| |___ | |__| |___/ / /  / / | |__| |___/ /    _| || |_",
     " \\____/ \\____//____/_/  /_/   \\____//____/    |_ _||___|",
     "",
+    "Original designed by Denlen Club and H.Ohnishi.",
+    "",
     ""
 ];
 
