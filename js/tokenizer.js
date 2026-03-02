@@ -60,9 +60,11 @@ const TokenType = Object.freeze({
     DOT:        'DOT',          // .
     SLASH:      'SLASH',        // / (newline output)
     STRING:     'STRING',       // "..." string literal
-    DQUESTION:  'DQUESTION',    // ??
-    QDOLLAR:    'QDOLLAR',      // ?$
-    QZERO:      'QZERO',        // ?0
+    DQUESTION:  'DQUESTION',    // ??   (hex 4-digit output)
+    QDOLLAR:    'QDOLLAR',      // ?$   (hex 2-digit output) / ?$(n)= (hex n-digit output)
+    QZERO:      'QZERO',        // ?0   (zero-padded decimal output)
+    DBLAT:      'DBLAT',        // @@   (clear variables)
+    STMTSEP:    'STMTSEP',      // one-or-more spaces outside a string — statement separator
     EOF:        'EOF',
 });
 
@@ -135,8 +137,15 @@ class Tokenizer {
                 }
             }
 
-            // ---- Whitespace ----
-            if (ch === ' ') { pos++; continue; }
+            // ---- Whitespace: one or more spaces → statement separator ----
+            // Spaces inside a string literal are already consumed above.
+            // Any space outside a string marks a boundary between statements.
+            // Consecutive spaces are coalesced into a single STMTSEP token.
+            if (ch === ' ') {
+                while (pos < len && src[pos] === ' ') pos++;
+                tokens.push(new Token(TokenType.STMTSEP, ' ', startPos));
+                continue;
+            }
 
             // ---- String literal "..." ----
             if (ch === '"') {
@@ -271,6 +280,11 @@ class Tokenizer {
                     tokens.push(new Token(TokenType.QUESTION, '?', startPos));
                 }
                 continue;
+            }
+            // @@ — clear variables
+            if (ch === '@' && pos + 1 < len && src[pos + 1] === '@') {
+                tokens.push(new Token(TokenType.DBLAT, '@@', startPos));
+                pos += 2; continue;
             }
 
             // ---- Single-character tokens ----

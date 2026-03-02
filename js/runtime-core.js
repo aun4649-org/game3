@@ -22,6 +22,7 @@ const STATEMENT_START_TYPES = new Set([
     TokenType.DQUESTION,
     TokenType.QDOLLAR,
     TokenType.QZERO,
+    TokenType.DBLAT,
     TokenType.DOLLAR,
     TokenType.DOT,
     TokenType.SLASH,
@@ -37,7 +38,7 @@ class CosmosRuntime {
         this.memory        = memory;
 
         // Execution state
-        this.systemVarRemainder = 0;
+        // systemVarRemainder (%) is stored in memory at $00D0 (see runtime-memory.js).
         this.callStack  = [];
         this.loopStack  = [];
         this.pc         = -1;

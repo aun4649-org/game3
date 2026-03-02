@@ -116,24 +116,51 @@ Object.assign(CosmosRuntime.prototype, {
             return 'NEXT';
         }
 
+        // ---- @@ — clear user variables and system variable % ----
+        if (t.type === TokenType.DBLAT) {
+            this.evalAdvance();
+            this.memory.fill(0, 0x0000, 0x00D4);
+            return 'NEXT';
+        }
+
         // ---- Output statements ----
 
-        // ?? = expr — hex 8-digit
+        // ?? = expr — hex 4-digit
         if (t.type === TokenType.DQUESTION) {
             this.evalAdvance();
             this.evalExpect(TokenType.ASSIGN);
             const val = await this.evalExpression();
-            runtimePrint(toUint32(val).toString(16).toUpperCase().padStart(8, '0'));
+            runtimePrint((val & 0xFFFF).toString(16).toUpperCase().padStart(4, '0'));
             return 'NEXT';
         }
 
-        // ?$ = expr — hex 2-digit
+        // ?$ = expr — hex 2-digit  /  ?$(n) = expr — hex n-digit
         if (t.type === TokenType.QDOLLAR) {
             this.evalAdvance();
-            this.evalExpect(TokenType.ASSIGN);
-            const val = await this.evalExpression();
-            runtimePrint((val & 0xFF).toString(16).toUpperCase().padStart(2, '0'));
-            return 'NEXT';
+            const next = this.evalPeek();
+
+            if (next.type === TokenType.LPAREN) {
+                // ?$(n) = expr — hex n-digit (zero-padded, rightmost n digits)
+                this.evalAdvance();
+                const widthTok = this.evalPeek();
+                if (widthTok.type !== TokenType.NUMBER) throw this.syntaxError("Undefined syntax", widthTok.pos);
+                const n = widthTok.value;
+                this.evalAdvance();
+                this.evalExpect(TokenType.RPAREN);
+                this.evalExpect(TokenType.ASSIGN);
+                const val = await this.evalExpression();
+                const hex = toUint32(val).toString(16).toUpperCase().padStart(n, '0');
+                runtimePrint(n > 0 ? hex.slice(-n) : '');
+                return 'NEXT';
+            }
+            if (next.type === TokenType.ASSIGN) {
+                // ?$ = expr — hex 2-digit
+                this.evalAdvance();
+                const val = await this.evalExpression();
+                runtimePrint((val & 0xFF).toString(16).toUpperCase().padStart(2, '0'));
+                return 'NEXT';
+            }
+            throw this.syntaxError("Undefined syntax", t.pos);
         }
 
         // ?0(n) = expr — zero-padded decimal
@@ -232,6 +259,9 @@ Object.assign(CosmosRuntime.prototype, {
 
     // Fast-forward past one statement without executing.
     // Used to reach the saved stmtIndex after a mid-line jump.
+    // Statements are delimited by STMTSEP (space) tokens; this method
+    // consumes exactly one statement's tokens, stopping before the
+    // STMTSEP (or EOF) that follows it.
     skipOneStatement() {
         const t = this.evalPeek();
 
@@ -243,11 +273,12 @@ Object.assign(CosmosRuntime.prototype, {
             return;
         }
 
-        // Multi-token: consume until the next statement-start at depth 0, or EOF.
+        // Multi-token: consume until STMTSEP or EOF.
         this.evalAdvance();
         let depth   = 0;
         let lastPos = this.evalPos;
-        while (this.evalPeek().type !== TokenType.EOF) {
+        while (this.evalPeek().type !== TokenType.EOF &&
+               this.evalPeek().type !== TokenType.STMTSEP) {
             const cur = this.evalPeek();
             if (cur.type === TokenType.LPAREN || cur.type === TokenType.LBRACKET ||
                 cur.type === TokenType.LBRACE) {
@@ -258,8 +289,6 @@ Object.assign(CosmosRuntime.prototype, {
             } else if (cur.type === TokenType.RBRACKET) {
                 if (depth > 0) { depth--; this.evalAdvance(); }
                 else break; // ] at depth 0 is RETURN — don't consume
-            } else if (depth === 0 && this.isStatementStart(cur)) {
-                break;
             } else {
                 this.evalAdvance();
             }

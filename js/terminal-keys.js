@@ -210,8 +210,9 @@ function initTerminal() {
     for (const line of STARTUP_ART) {
         println(line);
     }
-    println("COSMOS II SYSTEM v1.0");
-    println("Original designed by Denken Club and H.Ohnishi.");
+    println("COSMOS ][’ Virtual Computer System v0.1");
+    println("Implement the Extended GAME III VTL")
+    println("Original designed by DENKEN Club and H.Ohnishi");
     println("");
     println("READY.");
     printPrompt();

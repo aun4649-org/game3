@@ -41,12 +41,12 @@ Object.assign(CosmosRuntime.prototype, {
     // ---------- Main Execution Loop -------------------------
 
     async run(clearMem = true) {
-        this.statementsCache    = {}; // clear token cache for new run
-        this.callStack          = [];
-        this.loopStack          = [];
-        this.systemVarRemainder = 0;
-
-        if (clearMem) this.memory.fill(0, 0x0000, 0x00D0);
+        this.statementsCache = {}; // clear token cache for new run
+        this.callStack       = [];
+        this.loopStack       = [];
+        // Variables and system variables are NOT cleared on program run.
+        // They retain their values from the previous execution.
+        // Use @@ to explicitly reset variables.
 
         this.sortedLines = Object.keys(this.programMemory).map(Number).sort((a, b) => a - b);
         if (this.sortedLines.length === 0) return "NO PROGRAM";
@@ -95,6 +95,9 @@ Object.assign(CosmosRuntime.prototype, {
 
                 this.initEval(allTokens, 0);
 
+                // Skip leading statement separators (spaces before the first statement).
+                while (this.evalPeek().type === TokenType.STMTSEP) this.evalAdvance();
+
                 // Skip empty / comment lines
                 if (this.isComment(this.evalPeek())) {
                     this.advanceToNextLine();
@@ -106,6 +109,10 @@ Object.assign(CosmosRuntime.prototype, {
                 let jumped       = false;
 
                 while (this.evalPeek().type !== TokenType.EOF) {
+                    // Skip statement separators between statements.
+                    while (this.evalPeek().type === TokenType.STMTSEP) this.evalAdvance();
+                    if (this.evalPeek().type === TokenType.EOF) break;
+
                     const startPos = this.evalPos;
 
                     if (currentStmt < skipToStmt) {

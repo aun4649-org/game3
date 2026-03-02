@@ -6,6 +6,16 @@
 // All addresses are unsigned 16-bit; values are signed 32-bit.
 // ============================================================
 
+// ---------- System Variable: % (remainder) ------------------
+// Stored at $00D0-$00D3 (big-endian dword) so it persists across
+// direct-mode executions that share the same memory buffer.
+
+Object.defineProperty(CosmosRuntime.prototype, 'systemVarRemainder', {
+    get()  { return this.memReadDwordAddr(0x00D0); },
+    set(v) { this.memWriteDwordAddr(0x00D0, v); },
+    configurable: true,
+});
+
 Object.assign(CosmosRuntime.prototype, {
 
     // ---------- Byte ----------------------------------------
