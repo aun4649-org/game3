@@ -15,10 +15,19 @@
         <pre id="screen"></pre>
     </div>
 
-    <!-- Scripts: runtime → editor → terminal (dependency order) -->
-    <script src="js/runtime.js?v=2"></script>
-    <script src="js/editor.js?v=2"></script>
-    <script src="js/terminal.js?v=2"></script>
+    <!-- Scripts loaded in dependency order:
+         tokenizer → runtime (core → memory → evaluator → executor → loop)
+         → terminal (screen → input → keys) → editor -->
+    <script src="js/tokenizer.js?v=5"></script>
+    <script src="js/runtime-core.js?v=5"></script>
+    <script src="js/runtime-memory.js?v=5"></script>
+    <script src="js/runtime-evaluator.js?v=5"></script>
+    <script src="js/runtime-executor.js?v=5"></script>
+    <script src="js/runtime-loop.js?v=5"></script>
+    <script src="js/terminal-screen.js?v=5"></script>
+    <script src="js/terminal-input.js?v=5"></script>
+    <script src="js/terminal-keys.js?v=5"></script>
+    <script src="js/editor.js?v=5"></script>
 </body>
 
 </html>

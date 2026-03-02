@@ -1,209 +1,12 @@
 // ============================================================
-// terminal.js — COSMOS II Terminal UI
+// terminal-keys.js — Keyboard handler and terminal init
 // ============================================================
-// Full-screen retro terminal with CRT effect.
-// Provides I/O primitives used by both editor and runtime.
+// Handles all keyboard input for both editor mode and runtime
+// input mode.  Also contains the startup sequence.
 // ============================================================
-
-const COLS = 80;
-const ROWS = 25;
-let screenBuffer = [];
-let cursorX = 0;
-let cursorY = 0;
-
-let pagerLines = [];
-let pagerActive = false;
-
-// ---------- Runtime I/O State ----------
-let runtimeRunning = false;
-window.cosmosInterruptFlag = false; // Added for CTRL+C interrupt tracking
-let inputResolve = null;       // resolve function for pending input
-let inputMode = null;          // 'char' | 'number'
-let inputBuffer = "";          // accumulator for number input
-
-// ---------- ASCII Art ----------
-const STARTUP_ART = [
-    "",
-    "  _____  ____   _____  __  __  ____   _____    ___  ___",
-    " / ___/ / __ \\ / ___/ /  |/  |/ __ \\ / ___/   |_  ||  _|",
-    "| |    | |  | |\\___ \\/ /|_/ /| |  | |\\___ \\     | || |",
-    "| |___ | |__| |___/ / /  / / | |__| |___/ /    _| || |_",
-    " \\____/ \\____//____/_/  /_/   \\____//____/    |_ _||___|",
-    "",
-    ""
-];
-
-// ---------- Init ----------
-function initTerminal() {
-    clearScreen();
-    document.addEventListener('keydown', handleKeydown);
-
-    // Show startup ASCII art
-    for (const line of STARTUP_ART) {
-        println(line);
-    }
-    println("COSMOS II SYSTEM v1.0");
-    println("Original designed by Denken Club and H.Ohnishi.",);
-    println("");
-    println("READY.");
-    printPrompt();
-    renderScreen();
-}
-
-// ---------- Screen Management ----------
-function clearScreen() {
-    screenBuffer = [];
-    for (let i = 0; i < ROWS; i++) {
-        screenBuffer.push(new Array(COLS).fill(' '));
-    }
-    cursorX = 0;
-    cursorY = 0;
-}
-
-function printPrompt() {
-    if (cursorX > 0) {
-        cursorX = 0;
-        cursorY++;
-        if (cursorY >= ROWS) {
-            scrollUp();
-            cursorY = ROWS - 1;
-        }
-    }
-    printStr(">");
-}
-
-function printPagerNextPage() {
-    if (getLine(cursorY).startsWith("-- MORE --")) {
-        screenBuffer[cursorY] = new Array(COLS).fill(' ');
-        cursorX = 0;
-    }
-
-    let linesToPrint = Math.min(pagerLines.length, ROWS - 2);
-    for (let i = 0; i < linesToPrint; i++) {
-        println(pagerLines.shift());
-    }
-
-    if (pagerLines.length > 0) {
-        printStr("-- MORE --");
-    } else {
-        pagerActive = false;
-        printPrompt();
-    }
-}
-
-function renderScreen() {
-    let output = '';
-    for (let r = 0; r < ROWS; r++) {
-        let line = '';
-        for (let c = 0; c < COLS; c++) {
-            let ch = screenBuffer[r][c];
-            if (ch === '<') ch = '&lt;';
-            else if (ch === '>') ch = '&gt;';
-            else if (ch === '&') ch = '&amp;';
-
-            if (r === cursorY && c === cursorX) {
-                line += `<span class="cursor">${ch}</span>`;
-            } else {
-                line += ch;
-            }
-        }
-        output += line + '\n';
-    }
-    document.getElementById('screen').innerHTML = output;
-}
-
-function printStr(text) {
-    for (let i = 0; i < text.length; i++) {
-        putchar(text[i]);
-    }
-}
-
-function println(text) {
-    printStr(text);
-    newline();
-}
-
-function newline() {
-    cursorX = 0;
-    cursorY++;
-    if (cursorY >= ROWS) {
-        scrollUp();
-        cursorY = ROWS - 1;
-    }
-}
-
-function putchar(ch) {
-    if (cursorY >= ROWS) {
-        scrollUp();
-        cursorY = ROWS - 1;
-    }
-    if (cursorX >= COLS) {
-        cursorX = 0;
-        cursorY++;
-        if (cursorY >= ROWS) {
-            scrollUp();
-            cursorY = ROWS - 1;
-        }
-    }
-    screenBuffer[cursorY][cursorX] = ch;
-    cursorX++;
-}
-
-function scrollUp() {
-    screenBuffer.shift();
-    screenBuffer.push(new Array(COLS).fill(' '));
-}
-
-function getLine(y) {
-    return screenBuffer[y].join('').trimEnd();
-}
-
-// ---------- Runtime I/O API ----------
-// These are called by the runtime engine during program execution.
-
-// Output a string (no newline)
-// NOTE: renderScreen() is NOT called here to avoid flooding the browser with
-// rapid DOM updates in tight loops. The run loop calls renderScreen() once per
-// line at its yield point (setTimeout). For input prompts, runtimeInputChar /
-// runtimeInputNumber still call renderScreen() directly.
-function runtimePrint(text) {
-    printStr(text);
-}
-
-// Output a string with newline
-function runtimePrintln(text) {
-    println(text);
-}
-
-// Request a single character input from user — returns a Promise
-function runtimeInputChar() {
-    return new Promise((resolve) => {
-        inputMode = 'char';
-        inputResolve = resolve;
-        renderScreen();
-    });
-}
-
-// Request a number input from user — returns a Promise
-function runtimeInputNumber() {
-    return new Promise((resolve) => {
-        inputMode = 'number';
-        inputBuffer = "";
-        printStr("? ");
-        inputResolve = resolve;
-        renderScreen();
-    });
-}
-
-// Finish runtime mode
-function runtimeFinish() {
-    runtimeRunning = false;
-    inputResolve = null;
-    inputMode = null;
-    inputBuffer = "";
-}
 
 // ---------- Key Handler ----------
+
 function handleKeydown(e) {
     if (e.ctrlKey && e.key.toLowerCase() === 'c') {
         window.cosmosInterruptFlag = true;
@@ -216,7 +19,7 @@ function handleKeydown(e) {
                 // Immediately unblock any pending input wait.
                 const resolve = inputResolve;
                 inputResolve = null;
-                inputMode = null;
+                inputMode    = null;
                 resolve({ interrupted: true });
             }
             return;
@@ -236,7 +39,7 @@ function handleKeydown(e) {
                 renderScreen();
                 const resolve = inputResolve;
                 inputResolve = null;
-                inputMode = null;
+                inputMode    = null;
                 resolve(code);
             }
             return;
@@ -255,7 +58,7 @@ function handleKeydown(e) {
                 }
                 const resolve = inputResolve;
                 inputResolve = null;
-                inputMode = null;
+                inputMode    = null;
                 resolve(val);
             } else if (e.key === "Backspace") {
                 if (inputBuffer.length > 0) {
@@ -288,7 +91,7 @@ function handleKeydown(e) {
         return;
     }
 
-    let minXCurrent = screenBuffer[cursorY][0] === '>' ? 1 : 0;
+    const minXCurrent = screenBuffer[cursorY][0] === '>' ? 1 : 0;
 
     if (e.key === "ArrowLeft") {
         if (cursorX > minXCurrent) cursorX--;
@@ -297,13 +100,13 @@ function handleKeydown(e) {
     } else if (e.key === "ArrowUp") {
         if (cursorY > 0) {
             cursorY--;
-            let minXNew = screenBuffer[cursorY][0] === '>' ? 1 : 0;
+            const minXNew = screenBuffer[cursorY][0] === '>' ? 1 : 0;
             if (cursorX < minXNew) cursorX = minXNew;
         }
     } else if (e.key === "ArrowDown") {
         if (cursorY < ROWS - 1) {
             cursorY++;
-            let minXNew = screenBuffer[cursorY][0] === '>' ? 1 : 0;
+            const minXNew = screenBuffer[cursorY][0] === '>' ? 1 : 0;
             if (cursorX < minXNew) cursorX = minXNew;
         }
     } else if (e.key === "Backspace") {
@@ -335,7 +138,7 @@ function handleKeydown(e) {
         }
 
         if (typeof processCommand === "function") {
-            let out = processCommand(lineText);
+            const out = processCommand(lineText);
 
             // Handle async (RUN returns a Promise)
             if (out instanceof Promise) {
@@ -381,8 +184,6 @@ function handleKeydown(e) {
         for (let i = COLS - 1; i > cursorX; i--) {
             screenBuffer[cursorY][i] = screenBuffer[cursorY][i - 1];
         }
-
-        // Store the character AS-IS (lowercase support!)
         screenBuffer[cursorY][cursorX] = e.key;
         cursorX++;
         if (cursorX >= COLS) {
@@ -392,7 +193,7 @@ function handleKeydown(e) {
                 scrollUp();
                 cursorY = ROWS - 1;
             }
-            let minXNew = screenBuffer[cursorY][0] === '>' ? 1 : 0;
+            const minXNew = screenBuffer[cursorY][0] === '>' ? 1 : 0;
             if (cursorX < minXNew) cursorX = minXNew;
         }
     }
@@ -400,5 +201,21 @@ function handleKeydown(e) {
     renderScreen();
 }
 
-// ---------- Kickoff ----------
+// ---------- Terminal Init ----------
+
+function initTerminal() {
+    clearScreen();
+    document.addEventListener('keydown', handleKeydown);
+
+    for (const line of STARTUP_ART) {
+        println(line);
+    }
+    println("COSMOS II SYSTEM v1.0");
+    println("Original designed by Denken Club and H.Ohnishi.");
+    println("");
+    println("READY.");
+    printPrompt();
+    renderScreen();
+}
+
 window.addEventListener('load', initTerminal);
